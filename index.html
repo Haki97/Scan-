@@ -31,7 +31,7 @@
         input[type="file"] {
             display: none;
         }
-        .upload-btn, .capture-btn {
+        .upload-btn {
             background: #007bff;
             color: #fff;
             padding: 0.8rem 2rem;
@@ -42,15 +42,21 @@
             font-weight: 700;
             margin: 0.5rem;
         }
-        .upload-btn:hover, .capture-btn:hover {
+        .upload-btn:hover {
             background: #0056b3;
         }
-        #preview {
+        #preview-container {
             margin-top: 1rem;
-            width: 100%;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: center;
+        }
+        .preview {
             max-width: 100%;
             border-radius: 8px;
-            display: none;
+            width: 150px;
+            height: auto;
         }
         .download-btn {
             margin-top: 1.5rem;
@@ -80,22 +86,20 @@
 <body>
     <div class="scanner-container">
         <h1>Document Scanner</h1>
-        <label class="upload-btn" for="file-input">Upload Document</label>
-        <input type="file" id="file-input" accept="image/*" />
-        <button class="capture-btn" id="capture-btn">Take Picture</button>
-        <canvas id="canvas" style="display: none;"></canvas>
-        <img id="preview" />
+        <label class="upload-btn" for="file-input">Upload Documents</label>
+        <input type="file" id="file-input" accept="image/*" multiple />
+        <div id="preview-container"></div>
         <input type="text" id="rename-input" class="rename-input" placeholder="Enter file name" />
         <button class="download-btn" id="download-btn">Download PDF</button>
     </div>
 
     <script>
         const fileInput = document.getElementById('file-input');
-        const preview = document.getElementById('preview');
+        const previewContainer = document.getElementById('preview-container');
         const downloadBtn = document.getElementById('download-btn');
-        const canvas = document.getElementById('canvas');
-        const captureBtn = document.getElementById('capture-btn');
+        const canvas = document.createElement('canvas');
         const renameInput = document.getElementById('rename-input');
+        const images = [];
 
         async function removeBackground(imageDataUrl) {
             try {
@@ -124,83 +128,50 @@
         }
 
         fileInput.addEventListener('change', async function () {
-            const file = fileInput.files[0];
-            if (!file) return;
+            const files = Array.from(fileInput.files);
+            previewContainer.innerHTML = '';
+            images.length = 0;
 
-            const reader = new FileReader();
-            reader.onload = async function (e) {
-                const img = new Image();
-                img.src = e.target.result;
-                img.onload = async function () {
-                    const imageDataUrl = e.target.result;
-                    const backgroundRemovedUrl = await removeBackground(imageDataUrl);
-                    if (backgroundRemovedUrl) {
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        const ctx = canvas.getContext('2d');
-                        const newImg = new Image();
-                        newImg.src = backgroundRemovedUrl;
-                        newImg.onload = function () {
-                            ctx.drawImage(newImg, 0, 0, img.width, img.height);
-                            preview.src = canvas.toDataURL('image/png');
-                            preview.style.display = 'block';
-                            renameInput.style.display = 'block';
-                            downloadBtn.style.display = 'inline-block';
-                        };
-                    } else {
-                        alert('Background removal failed. Please try again.');
-                    }
+            for (const file of files) {
+                const reader = new FileReader();
+                reader.onload = async function (e) {
+                    const img = new Image();
+                    img.src = e.target.result;
+                    img.onload = async function () {
+                        const imageDataUrl = e.target.result;
+                        const backgroundRemovedUrl = await removeBackground(imageDataUrl);
+                        if (backgroundRemovedUrl) {
+                            canvas.width = img.width;
+                            canvas.height = img.height;
+                            const ctx = canvas.getContext('2d');
+                            const newImg = new Image();
+                            newImg.src = backgroundRemovedUrl;
+                            newImg.onload = function () {
+                                ctx.drawImage(newImg, 0, 0, img.width, img.height);
+                                images.push(canvas.toDataURL('image/png'));
+                                const previewImg = document.createElement('img');
+                                previewImg.src = canvas.toDataURL('image/png');
+                                previewImg.classList.add('preview');
+                                previewContainer.appendChild(previewImg);
+                                renameInput.style.display = 'block';
+                                downloadBtn.style.display = 'inline-block';
+                            };
+                        } else {
+                            alert('Background removal failed. Please try again.');
+                        }
+                    };
                 };
-            };
-            reader.readAsDataURL(file);
-        });
-
-        captureBtn.addEventListener('click', async function () {
-            const video = document.createElement('video');
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            video.srcObject = stream;
-            video.play();
-
-            const captureCanvas = document.createElement('canvas');
-            const captureCtx = captureCanvas.getContext('2d');
-
-            video.addEventListener('canplay', () => {
-                captureCanvas.width = video.videoWidth;
-                captureCanvas.height = video.videoHeight;
-                captureCtx.drawImage(video, 0, 0);
-                const imageDataUrl = captureCanvas.toDataURL('image/png');
-                stream.getTracks().forEach(track => track.stop());
-                video.remove();
-
-                const img = new Image();
-                img.src = imageDataUrl;
-                img.onload = async function () {
-                    const backgroundRemovedUrl = await removeBackground(imageDataUrl);
-                    if (backgroundRemovedUrl) {
-                        canvas.width = img.width;
-                        canvas.height = img.height;
-                        const ctx = canvas.getContext('2d');
-                        const newImg = new Image();
-                        newImg.src = backgroundRemovedUrl;
-                        newImg.onload = function () {
-                            ctx.drawImage(newImg, 0, 0, img.width, img.height);
-                            preview.src = canvas.toDataURL('image/png');
-                            preview.style.display = 'block';
-                            renameInput.style.display = 'block';
-                            downloadBtn.style.display = 'inline-block';
-                        };
-                    } else {
-                        alert('Background removal failed. Please try again.');
-                    }
-                };
-            });
+                reader.readAsDataURL(file);
+            }
         });
 
         downloadBtn.addEventListener('click', function () {
-            const imgData = canvas.toDataURL('image/png');
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF();
-            pdf.addImage(imgData, 'PNG', 10, 10, canvas.width / 10, canvas.height / 10);
+            images.forEach((imgData, index) => {
+                if (index > 0) pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 10, 10, 180, 160);
+            });
             const fileName = renameInput.value.trim() ? renameInput.value.trim() + '.pdf' : 'document.pdf';
             pdf.save(fileName);
         });
@@ -208,3 +179,4 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </body>
 </html>
+
